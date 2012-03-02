@@ -169,7 +169,7 @@ INTERVAL_SCHEDULE_EXPR = ''.join([
     'every\s+',
     '(?P<num>\d+(\.\d+)?)\s*',
     '(?P<units>h|hr|hrs|hours|m|min|mins|minutes)\s*',
-    '((?P<sync>synchronized)|from\s+(?P<from>\d\d:\d\d)\s+to\s+(?P<to>\d\d:\d\d))'
+    '((?P<sync>synchronized)|from\s+(?P<from>\d\d:\d\d)\s+to\s+(?P<to>\d\d:\d\d))?'
 ])
 INTERVAL_SCHEDULE_RE = re.compile(INTERVAL_SCHEDULE_EXPR)
 

@@ -449,6 +449,15 @@ class IntervalScheduleParseTestCase(TestCase):
                 from_time='11:00',
                 to_time='13:00'))
 
+    def test_minimal(self):
+        assert_equal(
+            parse_interval('every 1.5 min'),
+            ConfigIntervalScheduler(
+                number=1.5,
+                units='minutes',
+                from_time=None,
+                to_time=None))
+
 
 if __name__ == '__main__':
     run()
