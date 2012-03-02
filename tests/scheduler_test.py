@@ -11,6 +11,8 @@ from tron import action
 from tron import job
 from tron import scheduler
 from tron.schedule_parse import parse_daily_expression as parse_daily
+from tron.schedule_parse import parse_interval_expression as parse_interval
+from tron.schedule_parse import ConfigIntervalScheduler
 from tron.utils import timeutils
 
 
@@ -434,6 +436,18 @@ class IntervalSchedulerTest(TestCase):
 
     def test__str__(self):
         assert_equal(str(self.scheduler), "INTERVAL:%s" % self.interval)
+
+
+class IntervalScheduleParseTestCase(TestCase):
+
+    def test_basic(self):
+        assert_equal(
+            parse_interval('every 1h from 11:00 to 13:00'),
+            ConfigIntervalScheduler(
+                number=1,
+                units='hours',
+                from_time='11:00',
+                to_time='13:00'))
 
 
 if __name__ == '__main__':

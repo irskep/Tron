@@ -9,7 +9,7 @@ import tempfile
 
 from testify import *
 from tron.config_parse import *
-from tron.schedule_parse import ConfigDailyScheduler
+from tron.schedule_parse import ConfigDailyScheduler, ConfigIntervalScheduler
 from tron.utils import timeutils
 
 

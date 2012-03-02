@@ -9,6 +9,15 @@ ConfigDailyScheduler = namedtuple(
 )
 
 
+ConfigIntervalScheduler = namedtuple(
+    'ConfigIntervalScheduler',
+    ['number', 'units', 'from_time', 'to_time']
+)
+
+
+### DAILY SCHEDULER ###
+
+
 class ScheduleParseError(Exception):
     pass
 
@@ -149,4 +158,55 @@ def parse_daily_expression(expression):
         monthdays=monthdays,
         months=months,
         timestr=timestr,
+    )
+
+
+### INTERVAL SCHEDULER ###
+
+# format: every N (hours|mins|minutes) ["from" (time) "to" (time)]
+
+INTERVAL_SCHEDULE_EXPR = ''.join([
+    'every\s+',
+    '(?P<num>\d+(\.\d+)?)\s*',
+    '(?P<units>h|hr|hrs|hours|m|min|mins|minutes)\s*',
+    '((?P<sync>synchronized)|from\s+(?P<from>\d\d:\d\d)\s+to\s+(?P<to>\d\d:\d\d))'
+])
+INTERVAL_SCHEDULE_RE = re.compile(INTERVAL_SCHEDULE_EXPR)
+
+
+_HOUR_SYNONYMS = ['h', 'hr', 'hrs', 'hours']
+_MINUTE_SYNONYMS = ['m', 'min', 'mins', 'minutes']
+INTERVAL_CANONICALIZATION_MAP = {}
+for syn in _HOUR_SYNONYMS:
+    INTERVAL_CANONICALIZATION_MAP[syn] = 'hours'
+for syn in _MINUTE_SYNONYMS:
+    INTERVAL_CANONICALIZATION_MAP[syn] = 'minutes'
+
+
+def parse_interval_expression(expression):
+    """Given an expression of the form
+    'every hour|minute [from 00:00 to 00:00]|[synchronized]'
+    return the parsed values in a ConfigIntervalScheduler
+    """
+
+    m = INTERVAL_SCHEDULE_RE.match(expression.lower())
+    if not m:
+        raise ScheduleParseError('Expression %r is not a valid scheduler'
+                                 ' expression.' % expression)
+
+    num = float(m.group('num'))
+    units = INTERVAL_CANONICALIZATION_MAP[m.group('units')]
+
+    if m.group('sync'):
+        from_time = '00:00'
+        to_time = '23:59'
+    else:
+        from_time = m.group('from')
+        to_time = m.group('to')
+
+    return ConfigIntervalScheduler(
+        number=num,
+        units=units,
+        from_time=from_time,
+        to_time=to_time,
     )
