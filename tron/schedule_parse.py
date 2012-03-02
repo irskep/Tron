@@ -165,16 +165,6 @@ def parse_daily_expression(expression):
 
 # format: every N (hours|mins|minutes) ["from" (time) "to" (time)]
 
-INTERVAL_SCHEDULE_EXPR = ''.join([
-    '^every\s+',
-    '(?P<num>\d+(\.\d+)?)\s*',
-    '(?P<units>h|hr|hrs|hour|hours|m|min|mins|minute|minutes)\s*',
-    '(?P<sync>synchronized)?',
-    '(from\s+(?P<from>\d\d:\d\d)\s+to\s+(?P<to>\d\d:\d\d))?',
-    '$',
-])
-INTERVAL_SCHEDULE_RE = re.compile(INTERVAL_SCHEDULE_EXPR)
-
 
 _HOUR_SYNONYMS = ['h', 'hr', 'hrs', 'hour', 'hours']
 _MINUTE_SYNONYMS = ['m', 'min', 'mins', 'minute', 'minutes']
@@ -183,6 +173,17 @@ for syn in _HOUR_SYNONYMS:
     INTERVAL_CANONICALIZATION_MAP[syn] = 'hours'
 for syn in _MINUTE_SYNONYMS:
     INTERVAL_CANONICALIZATION_MAP[syn] = 'minutes'
+
+
+INTERVAL_SCHEDULE_EXPR = ''.join([
+    '^every\s+',
+    '(?P<num>\d+(\.\d+)?)\s*',
+    '(?P<units>%s)\s*' % '|'.join(_HOUR_SYNONYMS + _MINUTE_SYNONYMS),
+    '(?P<sync>synchronized)?',
+    '(from\s+(?P<from>\d\d:\d\d)\s+to\s+(?P<to>\d\d:\d\d))?',
+    '$',
+])
+INTERVAL_SCHEDULE_RE = re.compile(INTERVAL_SCHEDULE_EXPR)
 
 
 def parse_interval_expression(expression):
