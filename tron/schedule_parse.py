@@ -166,16 +166,18 @@ def parse_daily_expression(expression):
 # format: every N (hours|mins|minutes) ["from" (time) "to" (time)]
 
 INTERVAL_SCHEDULE_EXPR = ''.join([
-    'every\s+',
+    '^every\s+',
     '(?P<num>\d+(\.\d+)?)\s*',
-    '(?P<units>h|hr|hrs|hours|m|min|mins|minutes)\s*',
-    '((?P<sync>synchronized)|from\s+(?P<from>\d\d:\d\d)\s+to\s+(?P<to>\d\d:\d\d))?'
+    '(?P<units>h|hr|hrs|hour|hours|m|min|mins|minute|minutes)\s*',
+    '(?P<sync>synchronized)?',
+    '(from\s+(?P<from>\d\d:\d\d)\s+to\s+(?P<to>\d\d:\d\d))?',
+    '$',
 ])
 INTERVAL_SCHEDULE_RE = re.compile(INTERVAL_SCHEDULE_EXPR)
 
 
-_HOUR_SYNONYMS = ['h', 'hr', 'hrs', 'hours']
-_MINUTE_SYNONYMS = ['m', 'min', 'mins', 'minutes']
+_HOUR_SYNONYMS = ['h', 'hr', 'hrs', 'hour', 'hours']
+_MINUTE_SYNONYMS = ['m', 'min', 'mins', 'minute', 'minutes']
 INTERVAL_CANONICALIZATION_MAP = {}
 for syn in _HOUR_SYNONYMS:
     INTERVAL_CANONICALIZATION_MAP[syn] = 'hours'

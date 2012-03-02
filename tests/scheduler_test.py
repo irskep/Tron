@@ -458,6 +458,15 @@ class IntervalScheduleParseTestCase(TestCase):
                 from_time=None,
                 to_time=None))
 
+    def test_sync(self):
+        assert_equal(
+            parse_interval('every 1 hour synchronized'),
+            ConfigIntervalScheduler(
+                number=1,
+                units='hours',
+                from_time='00:00',
+                to_time='23:59'))
+
 
 if __name__ == '__main__':
     run()
