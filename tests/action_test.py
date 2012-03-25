@@ -3,10 +3,12 @@ import os
 import tempfile
 import shutil
 
-from testify import *
+from testify import setup, teardown, run, class_setup, class_teardown
+from testify import TestCase, assert_equal, assert_raises
 from testify.utils import turtle
 
 from tron import node, action, job, scheduler
+from tron.filehandler import FileHandleManager
 from tron.utils import timeutils, testingutils
 
 def get_num_runs_by_state(job, state):
@@ -31,19 +33,20 @@ class TestAction(TestCase):
     @teardown
     def teardown(self):
         shutil.rmtree(self.test_dir)
+        FileHandleManager.reset()
 
     def test_next_run(self):
-        assert_equals(self.job.next_runs(), [])
-        
+        assert_equal(self.job.next_runs(), [])
+
         self.action.scheduler = turtle.Turtle()
         self.action.scheduler.next_run = lambda j:None
 
-        assert_equals(self.job.next_runs(), [])
-        assert_equals(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 0)
+        assert_equal(self.job.next_runs(), [])
+        assert_equal(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 0)
 
         self.job.scheduler = scheduler.ConstantScheduler()
         assert self.job.next_runs()[0]
-        assert_equals(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 1)
+        assert_equal(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 1)
 
 
 class TestActionRun(TestCase):
@@ -66,44 +69,46 @@ class TestActionRun(TestCase):
     @teardown
     def teardown(self):
         shutil.rmtree(self.test_dir)
+        FileHandleManager.reset()
+
     def test_scheduled_start_succeed(self):
         self.job_run.scheduled_start()
 
         assert self.run.is_running
-        assert_equals(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 0)
-        assert_equals(get_num_runs_by_state(self.job, action.ActionRun.STATE_RUNNING), 1)
-        assert_equals(self.run.state, action.ActionRun.STATE_RUNNING)
+        assert_equal(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 0)
+        assert_equal(get_num_runs_by_state(self.job, action.ActionRun.STATE_RUNNING), 1)
+        assert_equal(self.run.state, action.ActionRun.STATE_RUNNING)
 
     def test_scheduled_start_wait(self):
         job_run2 = self.job.next_runs()[0]
-        
-        assert_equals(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 2)
+
+        assert_equal(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 2)
         job_run2.scheduled_start()
         assert job_run2.is_queued
-        assert_equals(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 1)
-        
+        assert_equal(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 1)
+
         self.job_run.scheduled_start()
         self.run.action_command.started()
         assert self.run.is_running
-        
+
         self.run.succeed()
         assert self.run.is_success
-        
+
         assert job_run2.action_runs[0].is_running
 
     def test_scheduled_start_cancel(self):
         self.job.queueing = False
         job_run2 = self.job.next_runs()[0]
         #self.action.scheduled[run2.id] = run2.state_data
-        
-        assert_equals(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 2)
+
+        assert_equal(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 2)
         job_run2.scheduled_start()
         assert job_run2.is_cancelled
-        assert_equals(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 1)
-        
+        assert_equal(get_num_runs_by_state(self.job, action.ActionRun.STATE_SCHEDULED), 1)
+
         self.job_run.scheduled_start()
         assert self.run.is_running
-        
+
         self.run.succeed()
         assert self.run.is_success
         assert job_run2.is_cancelled
@@ -116,7 +121,7 @@ class ActionRunState(TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.action = action.Action(name="Test Action")
         self.action.command = "Test command"
-        
+
         self.action.job = turtle.Turtle()
         self.action.job.output_path = None
         self.run = self.action.build_run(turtle.Turtle(output_path=self.test_dir))
@@ -127,19 +132,20 @@ class ActionRunState(TestCase):
     @teardown
     def teardown(self):
         shutil.rmtree(self.test_dir)
+        FileHandleManager.reset()
 
     def test_success(self):
         assert not self.run.is_running
         assert not self.run.is_done
-        
+
         assert self.run.attempt_start()
-        
+
         assert self.run.is_running
         assert not self.run.is_done
         assert self.run.start_time
 
         assert self.run.succeed()
-        
+
         assert not self.run.is_running
         assert self.run.is_done
         assert self.run.end_time
@@ -180,7 +186,7 @@ class TestRunDependency(TestCase):
         self.job.node_pool = testingutils.TestPool()
         self.job.output_path = self.test_dir
         self.action.job = self.job
-        self.dep_action.job = self.job 
+        self.dep_action.job = self.job
 
         self.job.topo_actions.append(self.dep_action)
         self.job.scheduler = scheduler.DailyScheduler()
@@ -191,30 +197,31 @@ class TestRunDependency(TestCase):
     @teardown
     def teardown(self):
         shutil.rmtree(self.test_dir)
+        FileHandleManager.reset()
 
     def test_success(self):
         assert self.run.is_scheduled
         assert self.dep_run.is_scheduled, self.dep_run.state
         self.job_run.start()
-        
+
         assert self.dep_run.is_queued
         self.run.succeed()
-        
+
         # Make it look like we started successfully
         #self.dep_run.action_command.machine.transition('start')
-        
+
         assert self.dep_run.is_running
         assert not self.dep_run.is_done
         assert self.dep_run.start_time
         assert not self.dep_run.end_time
-       
+
         self.dep_run.succeed()
 
         assert not self.dep_run.is_running
         assert self.dep_run.is_done
         assert self.dep_run.start_time
         assert self.dep_run.end_time
-              
+
     def test_fail(self):
         self.job_run.start()
         self.run.fail(1)
@@ -237,7 +244,8 @@ class ActionRunBuildingTest(TestCase):
     @teardown
     def teardown(self):
         shutil.rmtree(self.test_dir)
-        
+        FileHandleManager.reset()
+
     def test_build_run(self):
         run = self.job.build_run()
         self.action.build_run(run)
@@ -264,7 +272,8 @@ class ActionRunLogFileTest(TestCase):
     @teardown
     def teardown(self):
         shutil.rmtree(self.test_dir)
- 
+        FileHandleManager.reset()
+
     def test_no_logging(self):
         run = self.action.build_run(turtle.Turtle(output_path=self.test_dir))
         run.node = testingutils.TestNode()
@@ -274,6 +283,9 @@ class ActionRunLogFileTest(TestCase):
         run = self.action.build_run(turtle.Turtle(output_path=self.test_dir))
         run.node = testingutils.TestNode()
         run.attempt_start()
+        # Write some output to the files so they are created
+        run.stdout_file.write("stdout")
+        run.stderr_file.write("stderr")
         assert os.path.isfile(run.stdout_path)
         assert os.path.isfile(run.stderr_path)
         os.remove(run.stdout_path)
@@ -289,6 +301,7 @@ class ActionRunVariablesTest(TestCase):
     @class_teardown
     def unfreeze_time(self):
         timeutils.override_current_time(None)
+        FileHandleManager.reset()
 
     @setup
     def build_job(self):
@@ -404,11 +417,11 @@ class ActionRunVariablesTest(TestCase):
         self.action.command = "somescript -d %(daynumber-1)s"
         ystr = self.now - datetime.timedelta(days=1)
         assert_equal(self._cmd(), "somescript -d %d" % (ystr.toordinal(),))
-    
+
     def test_node_hostname(self):
         self.action.command = "somescript -d %(node)s"
         assert_equal(self._cmd(), "somescript -d host")
-        
+
 
 if __name__ == '__main__':
     run()

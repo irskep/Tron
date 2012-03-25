@@ -5,6 +5,7 @@ from subprocess import Popen, PIPE
 import sys
 
 from tron import node, command_context
+from tron.filehandler import FileHandleManager
 from tron.utils import timeutils
 from tron.utils import state
 
@@ -97,11 +98,11 @@ class ActionRunContext(object):
 class ActionRun(object):
     """An instance of running a action"""
     STATE_CANCELLED = state.NamedEventState('cancelled')
-    STATE_UNKNOWN = state.NamedEventState('unknown')
+    STATE_UNKNOWN = state.NamedEventState('unknown', short_name='UNKWN')
     STATE_FAILED = state.NamedEventState('failed')
     STATE_SUCCEEDED = state.NamedEventState('succeeded')
     STATE_RUNNING = state.NamedEventState('running')
-    STATE_STARTING = state.NamedEventState('starting')
+    STATE_STARTING = state.NamedEventState('starting', short_chars=5)
     STATE_QUEUED = state.NamedEventState('queued')
     STATE_SCHEDULED = state.NamedEventState('scheduled')
     STATE_SKIPPED = state.NamedEventState('skipped')
@@ -134,9 +135,15 @@ class ActionRun(object):
 
     STATE_QUEUED['schedule'] = STATE_SCHEDULED
 
-    def __init__(self, action, context=None, output_path=None):
+    def __init__(self,
+        action,
+        context=None,
+        output_path=None,
+        node=None,
+        id=None,
+    ):
         self.action = action
-        self.id = None
+        self.id = id
 
         self.run_time = None    # What time are we supposed to start
         self.start_time = None  # What time did we start
@@ -144,7 +151,7 @@ class ActionRun(object):
         self.exit_status = None
         self.machine = state.StateMachine(ActionRun.STATE_SCHEDULED)
 
-        self.node = None
+        self.node = node
 
         if context is None:
             # Provide dummy values for context variables that JobRun provides
@@ -191,7 +198,7 @@ class ActionRun(object):
         return self.tail_file(self.stderr_path, num_lines)
 
     def tail_file(self, path, num_lines):
-        if not path:
+        if not path or not os.path.exists(path):
             return []
         if not num_lines or num_lines <= 0:
             num_lines = sys.maxint
@@ -215,6 +222,10 @@ class ActionRun(object):
         if all(r.is_success or r.is_skipped for r in self.required_runs):
             return self.start()
 
+    def check_state(self, state):
+        """Check if the state machine can be transitioned to state."""
+        return self.machine.check(state)
+
     def start(self):
         if not self.machine.check('start'):
             raise InvalidStartStateError(self.state)
@@ -224,26 +235,33 @@ class ActionRun(object):
         self.end_time = None
         self.machine.transition('start')
         assert self.state == self.STATE_STARTING, self.state
-        self._open_output_file()
 
         if not self.is_valid_command:
             log.error("Command for action run %s is invalid: %r",
                       self.id, self.action.command)
-            self.fail(-1)
-            return
+            return self.fail(-1)
 
         # And now we try to actually start some work....
-        self.action_command = ActionCommand(self.id,
-                                            self.command,
-                                            stdout=self.stdout_file,
-                                            stderr=self.stderr_file)
+        self._setup_output_files()
+        self.action_command = ActionCommand(
+            self.id,
+            self.command,
+            stdout=self.stdout_file,
+            stderr=self.stderr_file
+        )
         self.action_command.machine.listen(True, self._handle_action_command)
         try:
             df = self.node.run(self.action_command)
             df.addErrback(self._handle_errback)
         except node.Error, e:
             log.warning("Failed to start %s: %r", self.id, e)
+            return False
         return True
+
+    def _setup_output_files(self):
+        file_manager = FileHandleManager.get_instance()
+        self.stdout_file = file_manager.open(self.stdout_path)
+        self.stderr_file = file_manager.open(self.stderr_path)
 
     def cancel(self):
         return self.machine.transition('cancel')
@@ -261,17 +279,8 @@ class ActionRun(object):
             return True
         return False
 
-    def _open_output_file(self):
-        try:
-            log.info("Opening file %s for output", self.stdout_path)
-            if self.stdout_path:
-                self.stdout_file = open(self.stdout_path, 'a')
-            if self.stderr_path:
-                self.stderr_file = open(self.stderr_path, 'a')
-        except IOError, e:
-            log.error(str(e) + " - Not storing command output!")
-
     def _close_output_file(self):
+        """Attempt to close any open file handlers."""
         if self.stdout_file:
             self.stdout_file.close()
         if self.stderr_file:
@@ -289,6 +298,7 @@ class ActionRun(object):
         generated.
         """
         log.info("Action error: %s", str(result))
+        self._close_output_file()
         if isinstance(result.value, node.ConnectError):
             log.warning("Failed to connect to host %s for run %s",
                         self.node.hostname, self.id)
@@ -308,22 +318,25 @@ class ActionRun(object):
         """
         log.debug("Action command state change: %s", self.action_command.state)
         if self.action_command.state == ActionCommand.RUNNING:
-            self.machine.transition('started')
-        elif self.action_command.state == ActionCommand.FAILSTART:
+            return self.machine.transition('started')
+
+        if self.action_command.state == ActionCommand.FAILSTART:
             self._close_output_file()
-            self.fail(None)
-        elif self.action_command.state == ActionCommand.EXITING:
+            return self.fail(None)
+
+        if self.action_command.state == ActionCommand.EXITING:
             if self.action_command.exit_status is None:
-                self.fail_unknown()
-            elif self.action_command.exit_status == 0:
-                self.succeed()
-            else:
-                self.fail(self.action_command.exit_status)
-        elif self.action_command.state == ActionCommand.COMPLETE:
+                return self.fail_unknown()
+            if not self.action_command.exit_status:
+                return self.succeed()
+            return self.fail(self.action_command.exit_status)
+
+        if self.action_command.state == ActionCommand.COMPLETE:
             self._close_output_file()
-        else:
-            raise Error("Invalid state for action command : %r" %
-                        self.action_command)
+            return
+
+        raise Error(
+            "Invalid state for action command : %r" % self.action_command)
 
     def start_dependants(self):
         for run in self.waiting_runs:
@@ -349,9 +362,10 @@ class ActionRun(object):
         """
         log.info("Lost communication with action run %s", self.id)
 
-        self.machine.transition('fail_unknown')
-        self.exit_status = None
-        self.end_time = None
+        if self.machine.transition('fail_unknown'):
+            self.exit_status = None
+            self.end_time = None
+            return True
 
     def mark_success(self):
         self.exit_status = 0
@@ -379,17 +393,43 @@ class ActionRun(object):
         # We were running when the state file was built, so we have no idea
         # what happened now.
         if self.is_running:
-            self.machine.transition('fail_unknown')
+            return self.machine.transition('fail_unknown')
 
     @property
     def data(self):
-        return {'id': self.id,
-                'state': str(self.state),
-                'run_time': self.run_time,
-                'start_time': self.start_time,
-                'end_time': self.end_time,
-                'command': self.command
+        """This data is used to serialize the state of this action run."""
+        return {
+            'id':           self.id,
+            'state':        str(self.state),
+            'run_time':     self.run_time,
+            'start_time':   self.start_time,
+            'end_time':     self.end_time,
+            'command':      self.command,
         }
+
+    def repr_data(self, max_lines=None):
+        """Return a dictionary that represents the external view of this
+        action run.
+        """
+        data = {
+            'id':           self.id,
+            'name':         self.action.name,
+            'state':        self.state.short_name,
+            'node':         self.node.hostname,
+            'command':      self.command,
+            'raw_command':  self.action.command,
+            'run_time':     self.run_time,
+            'start_time':   self.start_time,
+            'end_time':     self.end_time,
+            'exit_status':  self.exit_status,
+            'requirements': [req.name for req in self.action.required_actions],
+            'stdout':       [],
+            'stderr':       []
+        }
+        if max_lines:
+            data['stdout'] = self.tail_stdout(max_lines)
+            data['stderr'] = self.tail_stderr(max_lines)
+        return data
 
     def render_command(self):
         """Render our configured command under the command context.
@@ -422,6 +462,11 @@ class ActionRun(object):
             return False
 
     @property
+    def is_done(self):
+        return self.state in (self.STATE_FAILED, self.STATE_SUCCEEDED,
+                              self.STATE_CANCELLED, self.STATE_SKIPPED)
+
+    @property
     def is_queued(self):
         return self.state == self.STATE_QUEUED
 
@@ -432,11 +477,6 @@ class ActionRun(object):
     @property
     def is_scheduled(self):
         return self.state == self.STATE_SCHEDULED
-
-    @property
-    def is_done(self):
-        return self.state in (self.STATE_FAILED, self.STATE_SUCCEEDED,
-                              self.STATE_CANCELLED, self.STATE_SKIPPED)
 
     @property
     def is_unknown(self):
@@ -464,13 +504,22 @@ class ActionRun(object):
 
 
 class Action(object):
-    def __init__(self, name=None, command=None, node_pool=None):
+    def __init__(self, name=None, command=None, node_pool=None,
+                 required_actions=None):
         self.name = name
         self.command = command
         self.node_pool = node_pool
 
-        self.required_actions = []
+        self.required_actions = required_actions or []
         self.job = None
+
+    @classmethod
+    def from_config(cls, config, node_pools):
+        return cls(
+            name=config.name,
+            command=config.command,
+            node_pool=node_pools[config.node] if config.node else None
+        )
 
     def __eq__(self, other):
         if (not isinstance(other, Action)
@@ -484,17 +533,22 @@ class Action(object):
     def __ne__(self, other):
         return not self == other
 
-    def build_run(self, job_run):
-        """Build an instance of ActionRun for this action
-
-        This is used by the scheduler when scheduling a run
+    def build_run(self, job_run, cleanup=False):
+        """Build an instance of ActionRun for this action. If cleanup=True
+        we're building a cleanup action run.
         """
-        new_run = ActionRun(self, context=job_run.context)
+        callback = job_run.cleanup_action_run if cleanup else job_run.run_completed
 
-        new_run.id = "%s.%s" % (job_run.id, self.name)
-        new_run.output_path = job_run.output_path
-
-        return new_run
+        action_run = ActionRun(
+            self,
+            context=job_run.context,
+            node=job_run.node,
+            id="%s.%s" % (job_run.id, self.name),
+            output_path=job_run.output_path)
+        action_run.machine.listen(True, job_run.job.notify)
+        action_run.machine.listen(ActionRun.STATE_SUCCEEDED, callback)
+        action_run.machine.listen(ActionRun.STATE_FAILED,    callback)
+        return action_run
 
 
 class ActionCommand(object):
@@ -543,12 +597,12 @@ class ActionCommand(object):
 
     def started(self):
         self.start_time = timeutils.current_timestamp()
-        self.machine.transition("start")
+        return self.machine.transition("start")
 
     def exited(self, exit_status):
         self.end_time = timeutils.current_timestamp()
         self.exit_status = exit_status
-        self.machine.transition("exit")
+        return self.machine.transition("exit")
 
     def write_stderr(self, value):
         if self.stderr_file:
@@ -559,7 +613,7 @@ class ActionCommand(object):
             self.stdout_file.write(value)
 
     def write_done(self):
-        self.machine.transition("close")
+        return self.machine.transition("close")
 
     def __repr__(self):
         return "[ActionCommand %s] %s : %s" % (self.id, self.command,

@@ -1,16 +1,23 @@
 import datetime
-import logging
-from logging import handlers
-import os
 import platform
 import shutil
 import StringIO
 import tempfile
+from textwrap import dedent
 
-from testify import *
-from tron.config_parse import *
-from tron.schedule_parse import ConfigDailyScheduler, ConfigIntervalScheduler
-from tron.utils import timeutils
+from testify import assert_equal, assert_raises
+from testify import run, setup, teardown, TestCase
+from tron.config.config_parse import TronConfig, load_config, ConfigSSHOptions, valid_job
+from tron.config.config_parse import ConfigNode, ConfigNodePool, ConfigJob
+from tron.config.config_parse import ConfigAction, ConfigCleanupAction
+from tron.config.config_parse import ConfigService, ConfigError
+from tron.config.config_parse import CLEANUP_ACTION_NAME
+from tron.config.config_parse import valid_node_pool, valid_config
+from tron.config.schedule_parse import ConfigConstantScheduler
+from tron.config.schedule_parse import ConfigDailyScheduler
+from tron.config.schedule_parse import ConfigIntervalScheduler
+from tron.config.schedule_parse import ConfigGrocIntervalScheduler
+from tron.utils.dicts import FrozenDict
 
 
 BASE_CONFIG = """
@@ -123,6 +130,7 @@ jobs:
         node: *nodePool
         all_nodes: True
         schedule: "daily"
+        enabled: False
         actions:
             - &actionDaily
                 name: "action4_0"
@@ -139,11 +147,11 @@ services:
 """
 
     @setup
-    def setup(self):
+    def setup_testdir(self):
         self.test_dir = tempfile.mkdtemp()
 
     @teardown
-    def teardown(self):
+    def teardown_testdir(self):
         shutil.rmtree(self.test_dir)
 
     def test_attributes(self):
@@ -185,14 +193,16 @@ services:
                     queueing=False,
                     run_limit=50,
                     all_nodes=False,
-                    cleanup_action=ConfigAction(
+                    cleanup_action=ConfigCleanupAction(
                         name='cleanup',
                         command='test_command0.1',
                         requires=(),
-                        node=None)),
+                        node=None),
+                    enabled=True),
                 'test_job1': ConfigJob(
                     name='test_job1',
                     node='batch0',
+                    enabled=True,
                     schedule=ConfigDailyScheduler(
                         ordinals=None,
                         weekdays=set([0, 2, 4]),
@@ -219,6 +229,7 @@ services:
                 'test_job2': ConfigJob(
                     name='test_job2',
                     node='batch1',
+                    enabled=True,
                     schedule=ConfigDailyScheduler(
                         ordinals=None,
                         weekdays=None,
@@ -241,6 +252,7 @@ services:
                     name='test_job3',
                     node='batch1',
                     schedule=ConfigConstantScheduler(),
+                    enabled=True,
                     actions=FrozenDict(**{
                         'action3_1': ConfigAction(
                             name='action3_1',
@@ -281,7 +293,8 @@ services:
                     queueing=True,
                     run_limit=50,
                     all_nodes=True,
-                    cleanup_action=None)
+                    cleanup_action=None,
+                    enabled=False)
                 }),
                 services=FrozenDict(**{
                     'service0': ConfigService(
@@ -314,6 +327,7 @@ services:
         assert_equal(test_config.jobs, expected.jobs)
         assert_equal(test_config.services, expected.services)
         assert_equal(test_config, expected)
+        assert_equal(test_config.jobs['test_job4'].enabled, False)
 
 
 class BadJobConfigTest(TestCase):
@@ -473,6 +487,68 @@ services:
 """
         assert_raises(ConfigError, load_config, test_config)
 
+    def test_validate_node_pool(self):
+        config_node_pool = valid_node_pool(
+            dict(name="theName", nodes=["node1", "node2"]))
+        assert_equal(config_node_pool.name, "theName")
+        assert_equal(len(config_node_pool.nodes), 2)
+
+    def test_overlap_job_service_names(self):
+        tron_config = dict(
+            jobs=[
+                dict(
+                    name="sameName",
+                    node="localhost",
+                    schedule="interval 20s",
+                    actions=[dict(name="someAction", command="something")]
+                )
+            ],
+            services=[
+                dict(
+                    name="sameName",
+                    node="localhost",
+                    pid_file="file",
+                    command="something",
+                    monitor_interval="20"
+                )
+            ]
+        )
+        assert_raises(ConfigError, valid_config, tron_config)
+
+    def test_overlap_node_and_node_pools(self):
+        tron_config = dict(
+            nodes=[
+                dict(name="sameName", hostname="localhost")
+            ],
+            node_pools=[
+                dict(name="sameName", nodes=["sameNode"])
+            ]
+        )
+        assert_raises(ConfigError, valid_config, tron_config)
+
+    def test_validate_job_no_actions(self):
+        job_config = dict(
+            name="job",
+            node="localhost",
+            schedule="constant",
+            actions=[]
+        )
+        assert_raises(ConfigError, valid_job, job_config)
+
+    def test_invalid_node_name(self):
+        test_config = BASE_CONFIG + dedent("""
+            jobs:
+                -
+                    name: "test_job0"
+                    node: "some_unknown_node"
+                    schedule: "interval 20s"
+                    actions:
+                        -
+                            name: "action0_0"
+                            command: "test_command0.0"
+            """)
+        assert_raises(ConfigError, load_config, test_config)
+
+
 if __name__ == '__main__':
     run()
-

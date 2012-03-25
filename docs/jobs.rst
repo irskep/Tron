@@ -54,6 +54,9 @@ Optional Fields
     Action to run when either all actions have succeeded or the job has failed.
     See :ref:`job_cleanup_actions`.
 
+**enabled** (default **True**)
+    If **False** the job will not be queued to run.
+
 .. _job_actions:
 
 Actions
@@ -75,15 +78,17 @@ Required Fields
     Name of the action. Used in :command:`tronview` and :command:`tronctl`.
 
 **command**
-    Command to run on the specified node.
+    Command to run on the specified node. A common mistake here is to use
+    shell expansions or expressions in your command. Commands are run using
+    ``exec`` so bash (or other shell) expressions will not work, and could
+    cause the job to fail.
 
 Optional Fields
 ^^^^^^^^^^^^^^^
 
 **requires**
-    List of pointers to actions that must complete successfully before this
-    action is run. These actions must have been specifid earlier in the config
-    file.
+    List of action names that must complete successfully before this
+    action is run. Actions can only require actions in the same job.
 
 **node**
     Node or node pool to run the action on if different from the rest of the
@@ -276,7 +281,7 @@ Job Run States
     The run is currently running
 
 **SUCC**
-    The run completed successfully 
+    The run completed successfully
 
 **FAIL**
     The run failed
@@ -291,3 +296,13 @@ Job Run States
 **UNKWN**
     The run is in and unknown state.  This state occurs when tron restores a
     job that was running at the time of shutdown
+
+
+Action States
+^^^^^^^^^^^^^
+
+Job states are derived from the aggregate state of their actions.  The following
+is a state diagram for an action.
+
+.. image:: images/action.png
+    :width: 680px

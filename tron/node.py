@@ -63,10 +63,18 @@ class RunState(object):
 
 
 class NodePool(object):
+    """A pool of Node objects."""
     def __init__(self, nodes, name=None):
         self.nodes = nodes
         self.name = name or '_'.join(n.name for n in nodes)
         self.iter = None
+
+    @classmethod
+    def from_config(cls, node_pool_config, nodes):
+        return cls(
+            name=node_pool_config.name,
+            nodes=[nodes[n] for n in nodes]
+        )
 
     def __eq__(self, other):
         return isinstance(other, NodePool) and self.nodes == other.nodes
@@ -90,9 +98,18 @@ class NodePool(object):
         else:
             raise KeyError(value)
 
+    def repr_data(self):
+        """Returns a dict which is an external view of this object."""
+        return {
+            'name':         self.name,
+            'nodes':        [n.repr_data() for n in self.nodes]
+        }
 
 class Node(object):
-    """A node is tron's interface to communicating with an actual machine"""
+    """A node is tron's interface to communicating with an actual machine.
+    This class also supports the NodePool interface and can be used
+    directly as a NodePool of 1 Node.
+    """
 
     def __init__(self, hostname=None, name=None, ssh_options=None):
         # Host we are to connect to
@@ -118,6 +135,33 @@ class Node(object):
 
         self.idle_timeout = None
         self.idle_timer = None
+
+    @classmethod
+    def from_config(cls, node_config, ssh_options):
+        return cls(
+            hostname=node_config.hostname,
+            name=node_config.name,
+            ssh_options=ssh_options
+        )
+
+    def next(self):
+        """Required to support the NodePool interface."""
+        return self
+
+    def next_round_robin(self):
+        """Required to support the NodePool interface."""
+        return self
+
+    @property
+    def nodes(self):
+        """Required to support the NodePool interface."""
+        return [self]
+
+    def __getitem__(self, value):
+        """Required to support the NodePool interface."""
+        if self.hostname == value:
+            return self
+        raise KeyError(value)
 
     def __cmp__(self, other):
         if not isinstance(other, self.__class__):
@@ -408,3 +452,10 @@ class Node(object):
         # come back thanks to the magic of TCP, but something is up, best to
         # fail right now then limp along for and unknown amount of time.
         #self.connection.transport.connectionLost(failure.Failure())
+
+    def repr_data(self):
+        """Returns a dict which is an external view of this object."""
+        return {
+            'name':             self.name,
+            'hostname':         self.hostname
+        }

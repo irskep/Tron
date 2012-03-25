@@ -10,9 +10,9 @@ from testify.utils import turtle
 from tron import action
 from tron import job
 from tron import scheduler
-from tron.schedule_parse import parse_daily_expression as parse_daily
-from tron.schedule_parse import parse_interval_expression as parse_interval
-from tron.schedule_parse import ConfigIntervalScheduler
+from tron.config.schedule_parse import parse_daily_expression as parse_daily
+from tron.config.schedule_parse import parse_interval_expression as parse_interval
+from tron.config.schedule_parse import ConfigGrocIntervalScheduler
 from tron.utils import timeutils
 
 
@@ -31,7 +31,7 @@ class ConstantSchedulerTest(TestCase):
         self.action.job = self.job
 
     @teardown
-    def teardown(self):
+    def teardown_scheduler(self):
         shutil.rmtree(self.test_dir)
 
     def test_next_runs(self):
@@ -58,7 +58,7 @@ class DailySchedulerTest(TestCase):
         self.action.job = self.job
 
     @teardown
-    def teardown(self):
+    def teardown_scheduler(self):
         shutil.rmtree(self.test_dir)
 
     def test_next_runs(self):
@@ -427,7 +427,7 @@ class IntervalSchedulerTest(TestCase):
         self.action.job = self.job
 
     @teardown
-    def teardown(self):
+    def teardown_scheduler(self):
         shutil.rmtree(self.test_dir)
 
     def test_next_runs(self):
@@ -443,7 +443,7 @@ class IntervalScheduleParseTestCase(TestCase):
     def test_basic(self):
         assert_equal(
             parse_interval('every 1h from 11:00 to 13:00'),
-            ConfigIntervalScheduler(
+            ConfigGrocIntervalScheduler(
                 number=1,
                 units='hours',
                 from_time='11:00',
@@ -452,7 +452,7 @@ class IntervalScheduleParseTestCase(TestCase):
     def test_minimal(self):
         assert_equal(
             parse_interval('every 1.5 min'),
-            ConfigIntervalScheduler(
+            ConfigGrocIntervalScheduler(
                 number=1.5,
                 units='minutes',
                 from_time=None,
@@ -461,7 +461,7 @@ class IntervalScheduleParseTestCase(TestCase):
     def test_sync(self):
         assert_equal(
             parse_interval('every 1 hour synchronized'),
-            ConfigIntervalScheduler(
+            ConfigGrocIntervalScheduler(
                 number=1,
                 units='hours',
                 from_time='00:00',

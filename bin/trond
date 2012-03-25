@@ -11,6 +11,7 @@ import errno
 import logging
 import optparse
 import os
+from pkg_resources import resource_string
 import signal
 import sys
 
@@ -23,8 +24,7 @@ from twisted.web import server
 from twisted.scripts import _twistd_unix
 
 import tron
-from tron import cmd
-from tron import config
+from tron import commands
 from tron import mcp
 from tron import www
 from tron.utils import log_handler
@@ -34,8 +34,9 @@ logger = logging.getLogger('bin.trond')
 
 def create_default_config(config_path):
     """Create a default empty configuration for first time installs"""
+    default_config = resource_string('tron', 'default_config.yaml')
     with open(config_path, "w") as config_file:
-        config_file.write(config.DEFAULT_CONFIG)
+        config_file.write(default_config)
 
 
 def parse_options():
@@ -69,10 +70,10 @@ def parse_options():
 
     parser.add_option("--port", "-P", action="store", dest="listen_port",
                       help="What port to listen on, defaults %default",
-                      default=cmd.DEFAULT_PORT, type=int)
+                      default=commands.DEFAULT_PORT, type=int)
     parser.add_option("--host", "-H", action="store", dest="listen_host",
                       help="What host to listen on defaults to %default",
-                      default=cmd.DEFAULT_HOST, type=str)
+                      default=commands.DEFAULT_HOST, type=str)
 
     (options, args) = parser.parse_args(sys.argv)
 
@@ -90,8 +91,6 @@ def setup_logging(options):
     level = logging.WARNING
     twist_level = logging.WARNING
 
-    # TODO: Some stderr logging during development might be a good idea
-    #stream = sys.stderr
     if options.verbose > 0:
         level = logging.INFO
         twist_level = logging.WARNING

@@ -30,7 +30,7 @@ Required Fields
 **command**
     Command to start the service. This command is responsible for writing the
     service pid to ``pid_file``.
-    
+
 **monitor_interval**
     Seconds between checks that the service is still up.
 
@@ -69,11 +69,19 @@ States
 **DOWN**
     Service has been stopped
 
+State Diagram
+^^^^^^^^^^^^^
+
+This diagram shows all the states and (where applicable) the command used to
+transition between states.
+
+.. image:: images/service.png
+    :width: 680px
+
 Examples
 --------
 
-Here is the example from :ref:`Overview: Services <overview_services>`, but
-with the correct anchor and tag::
+Here is the example from :ref:`Overview: Services <overview_services>`::
 
     # ...
     services:

@@ -303,6 +303,15 @@ class ServiceInstance(object):
             self._hanging_monitor_check_delayed_call.cancel()
             self._hanging_monitor_check_delayed_call = None
 
+    @property
+    def data(self):
+        """This data is used to serialize the state of this service instance."""
+        return {
+            'node': self.node.hostname,
+            'instance_number': self.instance_number,
+            'state': str(self.state),
+        }
+
     def __str__(self):
         return "SERVICE:%s" % self.id
 
@@ -345,35 +354,44 @@ class Service(object):
                          down=STATE_DEGRADED))
 
     def __init__(self, name=None, command=None, node_pool=None, context=None,
-                 event_recorder=None):
+                 event_recorder=None, monitor_interval=None,
+                 restart_interval=None, pid_file_template=None, count=0):
         self.name = name
         self.command = command
-        self.scheduler = None
         self.node_pool = node_pool
-        self.count = 0
-        self.monitor_interval = None
-        self.restart_interval = None
+        self.count = count
+        self.monitor_interval = monitor_interval
+        self.restart_interval = restart_interval
         self._restart_timer = None
 
         self.machine = state.StateMachine(Service.STATE_DOWN)
 
-        self.pid_file_template = None
+        self.pid_file_template = pid_file_template
 
         self.context = None
         if context is not None:
-            self.set_context(None)
+            self.set_context(context)
 
         self.instances = []
 
         self.event_recorder = event.EventRecorder(self, parent=event_recorder)
         self.listen(True, self._record_state_changes)
 
+    @classmethod
+    def from_config(cls, srv_config, node_pools):
+        return cls(
+            name=srv_config.name,
+            node_pool=node_pools[srv_config.node] if srv_config.node else None,
+            monitor_interval=srv_config.monitor_interval,
+            restart_interval=srv_config.restart_interval,
+            pid_file_template=srv_config.pid_file,
+            command=srv_config.command,
+            count=srv_config.count
+        )
+
     @property
     def state(self):
-        if self.machine:
-            return self.machine.state
-        else:
-            return None
+        return self.machine.state
 
     @property
     def listen(self):
@@ -539,6 +557,7 @@ class Service(object):
                 self._restart_timer = reactor.callLater(
                     self.restart_interval, self._restart_after_failure)
 
+    # TODO: clean this up
     def absorb_previous(self, prev_service):
         # Some changes we need to worry about:
         # * Changing instance counts
@@ -551,8 +570,7 @@ class Service(object):
 
         rebuild_all_instances = any([
             self.command != prev_service.command,
-            self.pid_file_template != prev_service.pid_file_template,
-            self.scheduler != prev_service.scheduler])
+            self.pid_file_template != prev_service.pid_file_template])
 
         # Since we are inheriting all the existing instances, it's safe to also
         # inherit the previous state machine as well.
@@ -644,19 +662,11 @@ class Service(object):
 
     @property
     def data(self):
+        """This data is used to serialize the state of this service."""
         data = {
             'state': str(self.machine.state),
+            'instances': [instance.data for instance in self.instances]
         }
-        data['instances'] = []
-        for instance in self.instances:
-            service_data = {
-                'node': instance.node.hostname,
-                'instance_number': instance.instance_number,
-                'state': str(instance.state),
-            }
-
-            data['instances'].append(service_data)
-
         return data
 
     def restore(self, data):

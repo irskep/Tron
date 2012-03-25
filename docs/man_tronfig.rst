@@ -106,6 +106,8 @@ jobs
             boolean indicating overlapping job runs should queue rather than cancel
         run_limit (optional, default 50)
             Number of runs to store in history
+        enabled
+            If False the job will not be queued to run.
 
 Action objects
     These are the required options for action objects. **The exception is
@@ -211,7 +213,7 @@ Example Configuration
 
     services:
         - name: "testserv"
-          node: *pool
+          node: pool
           count: 8
           monitor_interval: 60
           restart_interval: 120
